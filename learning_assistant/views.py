@@ -25,6 +25,7 @@ except ImportError:
 
 from learning_assistant.api import (
     audit_trial_is_expired,
+    clear_learning_assistant_cache,
     get_audit_trial,
     get_course_id,
     get_message_history,
@@ -85,7 +86,12 @@ class CourseChatView(APIView):
         user_id = request.user.id
 
         if chat_history_enabled(courserun_key):
-            save_chat_message(courserun_key, user_id, LearningAssistantMessage.USER_ROLE, new_user_message['content'])
+            try:
+                save_chat_message(courserun_key, user_id, LearningAssistantMessage.USER_ROLE, new_user_message['content'])
+            except (ValueError, Exception) as e:
+                log.error(f"Failed to save user message: {str(e)}")
+                # Continue processing even if message saving fails
+                pass
 
         serializer = MessageSerializer(data=message_list, many=True)
 
@@ -109,13 +115,41 @@ class CourseChatView(APIView):
         template_string = getattr(settings, 'LEARNING_ASSISTANT_PROMPT_TEMPLATE', '')
         unit_id = request.query_params.get('unit_id')
 
-        prompt_template = render_prompt_template(
-            request, request.user.id, course_run_id, unit_id, course_id, template_string
-        )
-        status_code, message = get_chat_response(prompt_template, message_list)
+        try:
+            prompt_template = render_prompt_template(
+                request, request.user.id, course_run_id, unit_id, course_id, template_string
+            )
+        except Exception as e:
+            log.error(f"Failed to render prompt template: {str(e)}")
+            return Response(
+                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                data={'detail': 'Failed to process course content for chat request.'}
+            )
+        
+        try:
+            status_code, message = get_chat_response(prompt_template, message_list)
+        except ValueError as e:
+            log.error(f"Invalid input for chat request: {str(e)}")
+            return Response(
+                status=http_status.HTTP_400_BAD_REQUEST,
+                data={'detail': f'Invalid request format: {str(e)}'}
+            )
+        except Exception as e:
+            log.error(f"Unexpected error in chat request: {str(e)}")
+            return Response(
+                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                data={'detail': 'An unexpected error occurred while processing your request.'}
+            )
 
-        if chat_history_enabled(courserun_key):
-            save_chat_message(courserun_key, user_id, LearningAssistantMessage.ASSISTANT_ROLE, message['content'])
+        if chat_history_enabled(courserun_key) and isinstance(message, (dict, list)):
+            try:
+                # Handle both dict and list response formats
+                message_content = message['content'] if isinstance(message, dict) else str(message)
+                save_chat_message(courserun_key, user_id, LearningAssistantMessage.ASSISTANT_ROLE, message_content)
+            except (ValueError, Exception, KeyError, TypeError) as e:
+                log.error(f"Failed to save assistant message: {str(e)}")
+                # Continue processing even if message saving fails
+                pass
 
         return Response(status=status_code, data=message)
 
@@ -176,15 +210,22 @@ class CourseChatView(APIView):
         # If user has an audit enrollment record, get or create their trial. If the trial is not expired, return the
         # next message. Otherwise, return 403
         elif enrollment_mode in CourseMode.UPSELL_TO_VERIFIED_MODES:  # AUDIT, HONOR
-            audit_trial = get_or_create_audit_trial(request.user, enrollment_mode)
-            is_user_audit_trial_expired = audit_trial_is_expired(enrollment_object, audit_trial)
-            if is_user_audit_trial_expired:
+            try:
+                audit_trial = get_or_create_audit_trial(request.user, enrollment_mode)
+                is_user_audit_trial_expired = audit_trial_is_expired(enrollment_object, audit_trial)
+                if is_user_audit_trial_expired:
+                    return Response(
+                        status=http_status.HTTP_403_FORBIDDEN,
+                        data={'detail': 'The audit trial for this user has expired.'}
+                    )
+                else:
+                    return self._get_next_message(request, courserun_key, course_run_id)
+            except Exception as e:
+                log.error(f"Error handling audit trial: {str(e)}")
                 return Response(
-                    status=http_status.HTTP_403_FORBIDDEN,
-                    data={'detail': 'The audit trial for this user has expired.'}
+                    status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    data={'detail': 'Error processing audit trial information.'}
                 )
-            else:
-                return self._get_next_message(request, courserun_key, course_run_id)
 
         # If user has a course mode that is not verified & not meant to access to the learning assistant, return 403
         # This covers the other course modes: UNPAID_EXECUTIVE_EDUCATION & UNPAID_BOOTCAMP
@@ -317,22 +358,46 @@ class LearningAssistantChatSummaryView(APIView):
             )
             and chat_history_enabled(courserun_key)
         ):
-            message_count = int(request.GET.get('message_count', 50))
-            message_history = get_message_history(courserun_key, user, message_count)
-            message_history_data = MessageSerializer(message_history, many=True).data
+            try:
+                message_count_param = request.GET.get('message_count', '50')
+                message_count = int(message_count_param)
+                
+                # Validate message count
+                if message_count < 0:
+                    message_count = 50
+                elif message_count > 200:  # reasonable upper limit
+                    message_count = 200
+                    
+                message_history = get_message_history(courserun_key, user, message_count)
+                message_history_data = MessageSerializer(message_history, many=True).data
+                
+            except (ValueError, TypeError) as e:
+                log.warning(f"Invalid message_count parameter: {message_count_param}, using default")
+                message_count = 50
+                message_history = get_message_history(courserun_key, user, message_count)
+                message_history_data = MessageSerializer(message_history, many=True).data
+            except Exception as e:
+                log.error(f"Error retrieving message history: {str(e)}")
+                message_history_data = []
 
         data['message_history'] = message_history_data
 
         # Get audit trial.
-        trial = get_audit_trial(user)
+        try:
+            trial = get_audit_trial(user)
+            trial_data = {}
+            if trial:
+                trial_data['start_date'] = trial.start_date
+                trial_data['expiration_date'] = trial.expiration_date
+            data['audit_trial'] = trial_data
+        except Exception as e:
+            log.error(f"Error retrieving audit trial: {str(e)}")
+            data['audit_trial'] = {}
 
-        trial_data = {}
-        if trial:
-            trial_data['start_date'] = trial.start_date
-            trial_data['expiration_date'] = trial.expiration_date
-
-        data['audit_trial'] = trial_data
-
-        data['audit_trial_length_days'] = get_audit_trial_length_days(user.id, enrollment_mode)
+        try:
+            data['audit_trial_length_days'] = get_audit_trial_length_days(user.id, enrollment_mode)
+        except Exception as e:
+            log.error(f"Error getting audit trial length: {str(e)}")
+            data['audit_trial_length_days'] = 0
 
         return Response(status=http_status.HTTP_200_OK, data=data)
