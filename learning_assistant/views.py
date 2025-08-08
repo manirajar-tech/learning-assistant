@@ -336,3 +336,4 @@ class LearningAssistantChatSummaryView(APIView):
         data['audit_trial_length_days'] = get_audit_trial_length_days(user.id, enrollment_mode)
 
         return Response(status=http_status.HTTP_200_OK, data=data)
+        
