@@ -233,12 +233,12 @@ def get_chat_response(prompt_template, message_list):
                 log.error(f"Invalid JSON response: {e}")
                 return http_status.HTTP_502_BAD_GATEWAY, CHAT_API_ERROR_MESSAGES['invalid_response']
             
-            # Normalize response format
+            """ # Normalize response format
             if isinstance(response_json, list):
                 chat = response_json
             else:
-                chat = [response_json]
-                
+                chat = [response_json] """
+            chat = response_json
             log.info("Successfully received chat API response")
             return response.status_code, chat
             
