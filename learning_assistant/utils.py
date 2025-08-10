@@ -238,8 +238,6 @@ def get_chat_response(prompt_template, message_list):
                 chat = response_json
             else:
                 chat = [response_json] """
-            # For V2 endpoint, the response is a list of messages
-            # For V1 endpoint, the response is a dictionary message object
             chat = response_json
             log.info("Successfully received chat API response")
             return response.status_code, chat

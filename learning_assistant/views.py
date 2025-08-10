@@ -17,9 +17,11 @@ from rest_framework.views import APIView
 try:
     from common.djangoapps.course_modes.models import CourseMode
     from common.djangoapps.student.models import CourseEnrollment
+    from lms.djangoapps.courseware.access import get_user_role
 except ImportError:
     CourseMode = None
     CourseEnrollment = None
+    get_user_role = None
 
 from learning_assistant.api import (
     audit_trial_is_expired,
@@ -32,7 +34,7 @@ from learning_assistant.api import (
     save_chat_message,
 )
 from learning_assistant.models import LearningAssistantMessage
-from learning_assistant.platform_imports import get_cache_course_run_data, get_user_role
+from learning_assistant.platform_imports import get_cache_course_run_data
 from learning_assistant.serializers import MessageSerializer
 from learning_assistant.toggles import chat_history_enabled
 from learning_assistant.utils import (
