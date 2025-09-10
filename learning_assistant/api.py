@@ -174,23 +174,18 @@ message_obj.save()
     return length, items
 
 
-def get_block_content(request, user_id, course_id, unit_usage_key)
-message_obj.save():
+def get_block_content(request, user_id, course_id, unit_usage_key):
     """
     Public wrapper for retrieving the content of a given block's children.
 
     Args:
         request: HTTP request object
-        user_id (int)
-message_obj.save(): User ID
-        course_id (str)
-message_obj.save(): Course ID
-        unit_usage_key (str)
-message_obj.save(): Unit usage key
+        user_id (int): User ID
+        course_id (str): Course ID
+        unit_usage_key (str): Unit usage key
         
     Returns:
-        tuple: (length, items)
-message_obj.save() where:
+        tuple: (length, items) where:
             length - the cumulative length of a block's children's content
             items - a list of dictionaries containing the content type and text for each child
             
@@ -199,20 +194,14 @@ message_obj.save() where:
         Exception: If block retrieval or content processing fails
     """
     # Input validation
-    if not user_id or not isinstance(user_id, int)
-message_obj.save():
+    if not user_id or not isinstance(user_id, int):
         raise ValueError("Valid user_id is required")
-message_obj.save()
     
-    if not course_id or not isinstance(course_id, str)
-message_obj.save():
+    if not course_id or not isinstance(course_id, str):
         raise ValueError("Valid course_id is required")
-message_obj.save()
     
-    if not unit_usage_key or not isinstance(unit_usage_key, str)
-message_obj.save():
+    if not unit_usage_key or not isinstance(unit_usage_key, str):
         raise ValueError("Valid unit_usage_key is required")
-message_obj.save()
     
     cache_key = get_cache_key(
         resource=CACHE_KEY_PREFIXES['learning_assistant'],
@@ -220,51 +209,36 @@ message_obj.save()
         course_id=course_id,
         unit_usage_key=unit_usage_key
     )
-message_obj.save()
     
     cache_data = cache.get(cache_key)
-message_obj.save()
     log.debug(f"Cache {'hit' if cache_data else 'miss'} for key: {cache_key}")
-message_obj.save()
 
-    if not isinstance(cache_data, dict)
-message_obj.save():
+    if not isinstance(cache_data, dict):
         try:
             log.info(f"Fetching block content for user_id={user_id}, course_id={course_id}, unit={unit_usage_key}")
-message_obj.save()
             block = get_single_block(request, user_id, course_id, unit_usage_key)
-message_obj.save()
             
             if not block:
                 log.warning(f"No block found for unit_usage_key={unit_usage_key}")
-message_obj.save()
                 return 0, []
             
             length, items = _get_children_contents(block)
-message_obj.save()
             cache_data = {'content_length': length, 'content_items': items}
             
             cache_timeout = getattr(settings, 'LEARNING_ASSISTANT_CACHE_TIMEOUT', 360)
-message_obj.save()
             cache.set(cache_key, cache_data, cache_timeout)
-message_obj.save()
             
-            log.info(f"Cached block content with length={length}, items_count={len(items)
-message_obj.save()}")
-message_obj.save()
+            log.info(f"Cached block content with length={length}, items_count={len(items)}")
             
         except Exception as e:
-            log.error(f"Error retrieving block content: {str(e)
-message_obj.save()}")
-message_obj.save()
+            log.error(f"Error retrieving block content: {str(e)}")
             # Return empty content rather than failing completely
             return 0, []
 
     return cache_data['content_length'], cache_data['content_items']
 
 
-def render_prompt_template(request, user_id, course_run_id, unit_usage_key, course_id, template_string)
-message_obj.save():
+def render_prompt_template(request, user_id, course_run_id, unit_usage_key, course_id, template_string):
     """
     Return a rendered prompt template.
     """
@@ -273,18 +247,13 @@ message_obj.save():
     if unit_usage_key:
         try:
             _, unit_content_items = get_block_content(request, user_id, course_run_id, unit_usage_key)
-message_obj.save()
-unit_content = ' '.join(item['content_text'] for item in unit_content_items)
-message_obj.save()
+            unit_content = ' '.join(item['content_text'] for item in unit_content_items)
         except InvalidKeyError:
             log.warning(
-                'Failed to retrieve course content for course_id=%(course_run_id)
-message_obj.save()s because of '
-                'invalid unit_id=%(unit_usage_key)
-message_obj.save()s',
+                'Failed to retrieve course content for course_id=%(course_run_id)s because of '
+                'invalid unit_id=%(unit_usage_key)s',
                 {'course_run_id': course_run_id, 'unit_usage_key': unit_usage_key}
             )
-message_obj.save()
 
     # The maximum of 15,000 chars for the unit content is based on average lengths
     # of chat messages in production, the length of the static text in the system prompt template,
